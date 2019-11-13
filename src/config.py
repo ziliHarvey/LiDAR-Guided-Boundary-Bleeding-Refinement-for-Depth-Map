@@ -10,13 +10,16 @@ path_velodyne_points = "../data/velodyne_points/"
 # x = right, y = down, z = forward
 # focal length, u means horizontally and v means vertically
 # fu = fv in KITTI dataset
-f = 7.215377e+02
+fu = 7.215377e+02
+fv = 7.215377e+02
 # baseline
-b = (4.485728e+01 + 3.395242e+02) / 7.215377e+02
+baseline = (4.485728e+01 + 3.395242e+02) / 7.215377e+02
 # principle points
 cu = 6.095593e+02
 cv = 1.728540e+02
-
+# relative distance
+bx = 4.485728e+01 / (-fu)
+by = 2.163791e-01 / (-fv)
 # projection matrix
 # Velodyne: x = forward, y = left, z = up
 # from LiDAR to camera 00 
@@ -35,4 +38,4 @@ T_velo_cam = np.array([[7.533745e-03, -9.999714e-01, -6.166020e-04, -4.069766e-0
                        [9.998621e-01,  7.523790e-03,  1.480755e-02, -2.717806e-01],
                        [0.000000e+00,  0.000000e+00,  0.000000e+00,  1.000000e+00]])
 # bilateral filter size
-winsize = 5
+winsize = 9
