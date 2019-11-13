@@ -1,7 +1,7 @@
 import numpy as np
-import cv2 as cv
-from config import P_rect_2, R_rect_0, T_velo_cam, f, b, winsize
-from utils import dataLoader
+import cv2
+from config import P_rect_2, R_rect_0, T_velo_cam, fu, fv, baseline, winsize
+from utils import dataLoader, reproject_to_3D, save_ply
 import matplotlib.pyplot as plt
 
 def project_lidar_points(img, XYZ, inverse=False):
@@ -26,7 +26,7 @@ def project_lidar_points(img, XYZ, inverse=False):
         if v < 0 or v >= h:
             continue
         if inverse:
-            proj_map[v, u] = f * b / depth
+            proj_map[v, u] = fu * baseline/ depth
         else:
             proj_map[v, u] = depth
     return proj_map
@@ -64,7 +64,7 @@ def bf_vanilla(depth_map):
             # for position (r, c)
             if depth_map[r, c]:
                 # continue if at sampled position
-                disp_map[r, c] = f * b / depth_map[r, c]
+                disp_map[r, c] = fu * baseline / depth_map[r, c]
                 continue
             # at unsample position, find the nearest point as ri
             patch = depth_map[(r-winsize/2):(r+winsize/2+1), (c-winsize/2):(c+winsize/2+1)]
@@ -73,20 +73,41 @@ def bf_vanilla(depth_map):
                 # no points in current patch
                 continue
             r0_star = compute_weighted_r(patch, r0)
-            disp_map[r, c] = f * b / r0_star
+            disp_map[r, c] = fu * baseline / r0_star
     return disp_map
 
 if __name__ == "__main__":
-    data = dataLoader("002355")
+    data = dataLoader("000675")
     imgL = data.imgL
     pc = data.pc
     depth_map = project_lidar_points(imgL, pc[:, :3].T)
-    disp_map = bf_vanilla(depth_map)
-    plt.figure()
-    plt.imshow(depth_map, 'rainbow')
-    plt.colorbar()
-    plt.show()
-    plt.figure()
-    plt.imshow(disp_map, 'rainbow')
-    plt.colorbar()
-    plt.show()
+    disp_lidar = bf_vanilla(depth_map)
+    # plt.figure()
+    # plt.imshow(depth_map, 'rainbow')
+    # plt.colorbar()
+    # plt.show()
+    # plt.figure()
+    # plt.imshow(disp_map, 'rainbow')
+    # plt.colorbar()
+    # plt.show()
+    disp_stereo = np.load("../data/prediction/000675.npy")
+    # print(pc)
+    points, colors = reproject_to_3D(disp_stereo, imgL)
+    save_ply("../output/psmnet.ply", points, colors)
+    points, colors = reproject_to_3D(disp_lidar, imgL)
+    save_ply("../output/bflidar.ply", points, colors)
+
+    print("x")
+    print(max(points[:, 0]))
+    print(min(points[:, 0]))
+    print("y")
+    print(max(points[:, 1]))
+    print(min(points[:, 1]))
+    print("z")
+    print(max(points[:, 2]))
+    print(min(points[:, 2]))
+    # plt.figure()
+    # plt.imshow(disp_stereo, 'rainbow')
+    # plt.colorbar()
+    # plt.show()
+
