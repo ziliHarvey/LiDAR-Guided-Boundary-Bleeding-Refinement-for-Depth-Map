@@ -77,24 +77,34 @@ def bf_vanilla(depth_map):
     return disp_map
 
 if __name__ == "__main__":
-    data = dataLoader("000675")
+    data = dataLoader("005500")
     imgL = data.imgL
     pc = data.pc
     depth_map = project_lidar_points(imgL, pc[:, :3].T)
-    disp_lidar = bf_vanilla(depth_map)
-    # plt.figure()
-    # plt.imshow(depth_map, 'rainbow')
+    disp_lidar_raw = project_lidar_points(imgL, pc[:, :3].T, True)
+    plt.figure()
+    plt.imshow(disp_lidar_raw, 'rainbow', vmin=5, vmax=70)
+    plt.axis('off')
     # plt.colorbar()
-    # plt.show()
-    # plt.figure()
-    # plt.imshow(disp_map, 'rainbow')
+    plt.show()
+
+    disp_lidar_filtered = bf_vanilla(depth_map)
+    plt.figure()
+    plt.imshow(disp_lidar_filtered, 'rainbow', vmin=5, vmax=70)
+    plt.axis('off')
     # plt.colorbar()
-    # plt.show()
-    disp_stereo = np.load("../data/prediction/000675.npy")
-    # print(pc)
-    points, colors = reproject_to_3D(disp_stereo, imgL)
+    plt.show()
+
+    disp_psmnet = np.load("../data/prediction/005500.npy")
+    plt.figure()
+    plt.imshow(disp_psmnet, 'rainbow', vmin=5, vmax=70)
+    plt.axis('off')
+    # plt.colorbar()
+    plt.show()
+
+    points, colors = reproject_to_3D(disp_psmnet, imgL)
     save_ply("../output/psmnet.ply", points, colors)
-    points, colors = reproject_to_3D(disp_lidar, imgL)
+    points, colors = reproject_to_3D(disp_lidar_filtered, imgL)
     save_ply("../output/bflidar.ply", points, colors)
 
     print("x")
