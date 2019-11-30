@@ -1,6 +1,9 @@
 # ignore output
 output/*
 .DS_Store
+# ignore raw data
+data/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

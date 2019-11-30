@@ -77,7 +77,8 @@ def bf_vanilla(depth_map):
     return disp_map
 
 if __name__ == "__main__":
-    data = dataLoader("005500")
+    filename = "005500"
+    data = dataLoader(filename)
     imgL = data.imgL
     pc = data.pc
     depth_map = project_lidar_points(imgL, pc[:, :3].T)
@@ -95,7 +96,7 @@ if __name__ == "__main__":
     # plt.colorbar()
     plt.show()
 
-    disp_psmnet = np.load("../data/prediction/005500.npy")
+    disp_psmnet = np.load("../data/prediction/" + filename + ".npy")
     plt.figure()
     plt.imshow(disp_psmnet, 'rainbow', vmin=5, vmax=70)
     plt.axis('off')
@@ -103,9 +104,9 @@ if __name__ == "__main__":
     plt.show()
 
     points, colors = reproject_to_3D(disp_psmnet, imgL)
-    save_ply("../output/psmnet.ply", points, colors)
+    save_ply("../output/psmnet_" + filename + ".ply", points, colors)
     points, colors = reproject_to_3D(disp_lidar_filtered, imgL)
-    save_ply("../output/bflidar.ply", points, colors)
+    save_ply("../output/bflidar_" + filename + ".ply", points, colors)
 
     print("x")
     print(max(points[:, 0]))
