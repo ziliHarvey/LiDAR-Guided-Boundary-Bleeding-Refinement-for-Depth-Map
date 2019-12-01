@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import skimage
 from config import (path_image_02, path_image_03, path_velodyne_points,
                     baseline, cu, cv, fu, fv, bx, by, R_rect_0, T_velo_cam)
 
@@ -22,7 +23,8 @@ class dataLoader:
         else:
             file_path = path_image_03 + self.index + ".png" 
         try:
-            img = cv2.imread(file_path, -1)
+#             img = cv2.imread(file_path, -1)
+            img = skimage.io.imread(file_path).astype('uint16')
             return img
         except:
             print("The image file doesn't exisit...\n")
@@ -99,6 +101,29 @@ def save_ply(fn, points, colors):
     with open(fn, 'wb') as f:
         f.write((ply_header % dict(vert_num=num)).encode('utf-8'))
         np.savetxt(f, verts, fmt='%f %f %f %d %d %d ')
+        
+def compute_error(gt_disp,pred_disp):
+    '''
+    input: 
+          gt_disp: ground truth disparity, if saved as .png file, need to use 
+                   (skimage.io.imread(filepath).astype('float32')) / 256.0 to process
+          pred_disp: predicted disparity, if saved as .png file, following the same procedure.
+    output:
+          return error percentage
+    '''
+
+    valid_index_gt = np.argwhere(gt_disp > 0) 
+    valid_index_pred = np.argwhere(pred_disp > 0) 
+    valid_index = np.array([x for x in set(tuple(x) for x in valid_index_gt) & set(tuple(x) for x in valid_index_pred)])
+    valid_gt_disp = gt_disp[valid_index[:,0],valid_index[:,1]]
+    valid_pred_disp = pred_disp[valid_index[:,0],valid_index[:,1]]
+    
+    error = np.zeros_like(gt_disp)
+    error[valid_index[:,0],valid_index[:,1]] =  np.abs(valid_gt_disp - valid_pred_disp)
+    correct_count = (error[valid_index[:,0],valid_index[:,1]] < 3) | \
+                    (error[valid_index[:,0],valid_index[:,1]] < valid_gt_disp * 0.05)
+
+    return 1 - (float(sum(correct_count))/ float(valid_index.shape[0])),error
 
 if __name__ == "__main__":
     data = dataLoader("0000000000")
