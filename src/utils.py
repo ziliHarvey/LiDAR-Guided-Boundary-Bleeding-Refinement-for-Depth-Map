@@ -118,7 +118,7 @@ def compute_error(gt_disp,pred_disp):
     valid_gt_disp = gt_disp[valid_index[:,0],valid_index[:,1]]
     valid_pred_disp = pred_disp[valid_index[:,0],valid_index[:,1]]
     
-    error = np.zeros_like(gt_disp)
+    error = np.zeros_like(gt_disp)-5
     error[valid_index[:,0],valid_index[:,1]] =  np.abs(valid_gt_disp - valid_pred_disp)
     correct_count = (error[valid_index[:,0],valid_index[:,1]] < 3) | \
                     (error[valid_index[:,0],valid_index[:,1]] < valid_gt_disp * 0.05)

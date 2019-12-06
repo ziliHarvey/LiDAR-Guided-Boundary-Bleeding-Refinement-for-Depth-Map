@@ -1,9 +1,10 @@
 import numpy as np
 import cv2
 from config import P_rect_2, R_rect_0, T_velo_cam, fu, fv, baseline, winsize
-from utils import dataLoader, reproject_to_3D, save_ply
+from utils import dataLoader, reproject_to_3D, save_ply, compute_error
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
+from numba import jit
 
 def project_lidar_points(img, XYZ, inverse=False):
     """
@@ -32,6 +33,7 @@ def project_lidar_points(img, XYZ, inverse=False):
             proj_map[v, u] = depth
     return proj_map
 
+
 def search_nearest_r(patch):
     # find the min(ri) for points within the patch
     min_r = 1000
@@ -50,7 +52,7 @@ def compute_weighted_r(patch, r0):
             cur_r = patch[i][j]
             if cur_r == 0:
                 continue
-            gs = 1.0 / (1 + np.sqrt((i-winsize/2)**2 + (j-winsize/2)**2))
+            gs = 1.0 / (1 + np.sqrt((i-winsize//2)**2 + (j-winsize//2)**2))
             gr = 1.0 / (1 + abs(cur_r - r0))
             w += gs * gr
             wr += gs * gr * cur_r
@@ -81,10 +83,24 @@ def dispersion(r1, r2):
     # define distance function according to dispersion degree
     return abs((r1-r2)/(r1+r2))
 
+@jit(nopython=True, fastmath=True)
+def compute_weighted_r_sparse(r0, IJR):
+    # IJR is a (n, 3) array with row, col, range
+    # r0 is the nearest value to the central position
+    w, wr = 0.0, 0.0
+    for idx in range(len(IJR)):
+        i, j, r = IJR[idx, 0], IJR[idx, 1], IJR[idx, 2]
+        gs = 1.0 / (1 + np.sqrt((i-winsize//2)**2 + (j-winsize//2)**2))
+        gr = 1.0 / (1 + abs(r - r0))
+        w += gs * gr
+        wr += gs * gr * r
+    return wr / w
+
 def measure_dispersion(imgL, pc):
     depth_map = project_lidar_points(imgL, pc[:, :3].T)
     h, w = depth_map.shape
     edge_map = np.zeros((h, w), dtype=np.uint8)
+    disp_map = np.zeros((h, w))
     for i in range(winsize//2, h-winsize//2):
         for j in range(winsize//2, w-winsize//2):
             # local neighborhood to measure dispersion
@@ -95,18 +111,60 @@ def measure_dispersion(imgL, pc):
             r_valid = patch[patch > 0]
             # form data list [[i1, j1, r1], [i2, j2, r2], ...] to feed into DBSCAN
             X = np.concatenate((i_valid.reshape(-1, 1), j_valid.reshape(-1, 1), r_valid.reshape(-1, 1)), axis=1)
-            if len(X) == 0:
+            if len(X) <= 10:
+                # if there are so few number of points available, skip it
                 continue
-            # print("Processing coordinates [" + str(i) + ", " + str(j) + "]")
             # DBSCAN according to range of each pixel
             clustering = DBSCAN(eps=0.08, min_samples=2, metric=dispersion).fit(X[:, 2].reshape(-1, 1))
             labels = clustering.labels_
             num_cluster = max(labels)
             if num_cluster > 0:
+                # mark this edge pixel
                 edge_map[i, j] = 255
-                # print("has " + str(num_cluster) + " clusters...................")
-    return edge_map
+                # if alreay point projected
+                if depth_map[i, j]:
+                    disp_map[i, j] = fu * baseline / depth_map[i, j]
+                    continue
+                # most of the time there are only 2 clusters, we assume there're only 2
+                s1_idx = labels == 0
+                s1_num = len(labels[s1_idx])
+                s1_mean = sum(labels[s1_idx])/s1_num
+                s2_idx = labels == 1
+                s2_num = len(labels[s2_idx])
+                s2_mean = sum(labels[s2_idx])/s2_num
+                # here set thr for picking cluster
+                thr = 1
+                # find cluster s1, which is the cluster with min average r
+                if (s1_mean < s2_mean and s1_num/s2_num > thr) or \
+                   (s1_mean > s2_mean and s2_num/s1_num < thr):
+                    r0 = min(X[s1_idx][:, 2])
+                    r0_star = compute_weighted_r_sparse(r0, X[s1_idx])
+                else:
+                    r0 = min(X[s2_idx][:, 2]) 
+                    r0_star = compute_weighted_r_sparse(r0, X[s2_idx])
+                # if s1_mean > s2_mean:
+                #     # switch
+                #     s1_idx, s2_idx = s2_idx, s1_idx
+                #     s1_num, s2_num = s2_num, s1_num
+                # if s1_num/s2_num > 1:
+                #     # run bilater filter only on s1
+                #     r0 = min(X[s1_idx][:, 2])
+                #     r0_star = compute_weighted_r_sparse(r0, X[s1_idx])
+                # else:
+                #     # run bilateral filter only on s2
+                #     r0 = min(X[s2_idx][:, 2]) 
+                #     r0_star = compute_weighted_r_sparse(r0, X[s2_idx])
+                disp_map[i, j] = fu * baseline / r0_star
+    return edge_map, disp_map
 
+def replace_boundary(disp_psmnet, disp_bf):
+    h, w = disp_psmnet.shape
+    disp = np.zeros((h, w))
+    for i in range(h):
+        for j in range(w):
+            if disp_bf[i, j] != 0:
+                disp[i, j] = disp_psmnet[i, j]
+    return disp
             
 
 
@@ -145,14 +203,32 @@ if __name__ == "__main__":
     # save_ply("../output/bflidar_" + filename + ".ply", points, colors)
 
     # test DBSCAN
-    filename = "000112"
+    filename = "000038"
     data = dataLoader(filename)
     imgL = data.imgL
     pc = data.pc
-    edge_map = measure_dispersion(imgL, pc)
-    plt.figure()
-    plt.imshow(edge_map, 'rainbow')
-    plt.show()
+    edge_map, disp_bf = measure_dispersion(imgL, pc)
+    # cv2.imwrite("../output/" + filename + "_edge.png", edge_map)
+    # plt.figure()
+    # plt.imshow(disp_map, 'rainbow')
+    # plt.colorbar()
+    # plt.show()
+    disp_psmnet = cv2.imread("../data/prediction/" + filename + ".png", -1)/256.0
+    disp_gt = cv2.imread("../data/gt/disp_occ_0/" + filename + ".png", -1)/256.0
+    error1, error_map1 = compute_error(disp_gt, replace_boundary(disp_psmnet, disp_bf))
+    print("Before refinement..." + str(error1))
+    # disp_refined = replace_boundary(disp_psmnet, disp_bf)
+    error2, error_map2 = compute_error(disp_gt, disp_bf)
+    f = plt.figure()
+    f.add_subplot(1,2, 1)
+    plt.imshow(error_map1, 'rainbow', vmin=-5, vmax=20)
+    f.add_subplot(1,2, 2)
+    plt.imshow(error_map2, 'rainbow', vmin=-5, vmax=20)
+    plt.colorbar()
+    plt.show(block=True)
+    print("After refinement..." + str(error2))
+
+
 
 
 
