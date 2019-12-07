@@ -12,7 +12,7 @@ path_velodyne_points = "../data/velodyne_points/"
 # fu = fv in KITTI dataset
 fu = 7.215377e+02
 fv = 7.215377e+02
-# baseline
+# baseline ~0.53
 baseline = (4.485728e+01 + 3.395242e+02) / 7.215377e+02
 # principle points
 cu = 6.095593e+02

@@ -1,8 +1,6 @@
 import numpy as np
 import cv2
 from config import P_rect_2, R_rect_0, T_velo_cam, fu, fv, baseline, winsize
-from utils import dataLoader, reproject_to_3D, save_ply, compute_error
-import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
 from numba import jit
 
@@ -44,6 +42,7 @@ def search_nearest_r(patch):
                 min_r = cur_r
     return min_r
 
+@jit(nopython=True, fastmath=True)
 def compute_weighted_r(patch, r0):
     wr, w = 0.0, 0.0
     # set center to the nearest sampled range
@@ -111,11 +110,11 @@ def measure_dispersion(imgL, pc):
             r_valid = patch[patch > 0]
             # form data list [[i1, j1, r1], [i2, j2, r2], ...] to feed into DBSCAN
             X = np.concatenate((i_valid.reshape(-1, 1), j_valid.reshape(-1, 1), r_valid.reshape(-1, 1)), axis=1)
-            if len(X) <= 10:
+            if len(X) <= 5:
                 # if there are so few number of points available, skip it
                 continue
             # DBSCAN according to range of each pixel
-            clustering = DBSCAN(eps=0.08, min_samples=2, metric=dispersion).fit(X[:, 2].reshape(-1, 1))
+            clustering = DBSCAN(eps=0.05, min_samples=2, metric=dispersion).fit(X[:, 2].reshape(-1, 1))
             labels = clustering.labels_
             num_cluster = max(labels)
             if num_cluster > 0:
@@ -125,108 +124,56 @@ def measure_dispersion(imgL, pc):
                 if depth_map[i, j]:
                     disp_map[i, j] = fu * baseline / depth_map[i, j]
                     continue
-                # most of the time there are only 2 clusters, we assume there're only 2
-                s1_idx = labels == 0
-                s1_num = len(labels[s1_idx])
-                s1_mean = sum(labels[s1_idx])/s1_num
-                s2_idx = labels == 1
-                s2_num = len(labels[s2_idx])
-                s2_mean = sum(labels[s2_idx])/s2_num
-                # here set thr for picking cluster
-                thr = 1
-                # find cluster s1, which is the cluster with min average r
-                if (s1_mean < s2_mean and s1_num/s2_num > thr) or \
-                   (s1_mean > s2_mean and s2_num/s1_num < thr):
-                    r0 = min(X[s1_idx][:, 2])
-                    r0_star = compute_weighted_r_sparse(r0, X[s1_idx])
-                else:
-                    r0 = min(X[s2_idx][:, 2]) 
-                    r0_star = compute_weighted_r_sparse(r0, X[s2_idx])
-                # if s1_mean > s2_mean:
-                #     # switch
-                #     s1_idx, s2_idx = s2_idx, s1_idx
-                #     s1_num, s2_num = s2_num, s1_num
-                # if s1_num/s2_num > 1:
-                #     # run bilater filter only on s1
+                r0 = search_nearest_r(patch)
+                r0_star = compute_weighted_r(patch, r0)
+                disp_map[i, j] = fu * baseline / r0_star
+
+                # # most of the time there are only 2 clusters, we assume there're only 2
+                # s1_idx = labels == 0
+                # s1_num = len(labels[s1_idx])
+                # s1_mean = sum(labels[s1_idx])/s1_num
+                # s2_idx = labels == 1
+                # s2_num = len(labels[s2_idx])
+                # s2_mean = sum(labels[s2_idx])/s2_num
+                # # here set thr for picking cluster
+                # thr = 1
+                # # find cluster s1, which is the cluster with min average r
+                # if (s1_mean < s2_mean and s1_num/s2_num > thr) or \
+                #    (s1_mean > s2_mean and s2_num/s1_num < thr):
                 #     r0 = min(X[s1_idx][:, 2])
                 #     r0_star = compute_weighted_r_sparse(r0, X[s1_idx])
                 # else:
-                #     # run bilateral filter only on s2
                 #     r0 = min(X[s2_idx][:, 2]) 
                 #     r0_star = compute_weighted_r_sparse(r0, X[s2_idx])
-                disp_map[i, j] = fu * baseline / r0_star
+                # # if s1_mean > s2_mean:
+                # #     # switch
+                # #     s1_idx, s2_idx = s2_idx, s1_idx
+                # #     s1_num, s2_num = s2_num, s1_num
+                # # if s1_num/s2_num > 1:
+                # #     # run bilater filter only on s1
+                # #     r0 = min(X[s1_idx][:, 2])
+                # #     r0_star = compute_weighted_r_sparse(r0, X[s1_idx])
+                # # else:
+                # #     # run bilateral filter only on s2
+                # #     r0 = min(X[s2_idx][:, 2]) 
+                # #     r0_star = compute_weighted_r_sparse(r0, X[s2_idx])
+                # disp_map[i, j] = fu * baseline / r0_star
     return edge_map, disp_map
 
 def replace_boundary(disp_psmnet, disp_bf):
-    h, w = disp_psmnet.shape
-    disp = np.zeros((h, w))
+    disp_refined = disp_psmnet.copy()
+    h, w = disp_refined.shape
     for i in range(h):
         for j in range(w):
             if disp_bf[i, j] != 0:
-                disp[i, j] = disp_psmnet[i, j]
-    return disp
+                disp_refined[i, j] = disp_bf[i, j]
+    return disp_refined
             
 
 
 
 
-if __name__ == "__main__":
-    # filename = "005500"
-    # data = dataLoader(filename)
-    # imgL = data.imgL
-    # pc = data.pc
-    # depth_map = project_lidar_points(imgL, pc[:, :3].T)
-    # disp_lidar_raw = project_lidar_points(imgL, pc[:, :3].T, True)
-    # plt.figure()
-    # plt.imshow(disp_lidar_raw, 'rainbow', vmin=5, vmax=70)
-    # plt.axis('off')
-    # # plt.colorbar()
-    # plt.show()
 
-    # disp_lidar_filtered = bf_vanilla(depth_map)
-    # plt.figure()
-    # plt.imshow(disp_lidar_filtered, 'rainbow', vmin=5, vmax=70)
-    # plt.axis('off')
-    # # plt.colorbar()
-    # plt.show()
-
-    # disp_psmnet = np.load("../data/prediction/" + filename + ".npy")
-    # plt.figure()
-    # plt.imshow(disp_psmnet, 'rainbow', vmin=5, vmax=70)
-    # plt.axis('off')
-    # # plt.colorbar()
-    # plt.show()
-
-    # points, colors = reproject_to_3D(disp_psmnet, imgL)
-    # save_ply("../output/psmnet_" + filename + ".ply", points, colors)
-    # points, colors = reproject_to_3D(disp_lidar_filtered, imgL)
-    # save_ply("../output/bflidar_" + filename + ".ply", points, colors)
-
-    # test DBSCAN
-    filename = "000038"
-    data = dataLoader(filename)
-    imgL = data.imgL
-    pc = data.pc
-    edge_map, disp_bf = measure_dispersion(imgL, pc)
-    # cv2.imwrite("../output/" + filename + "_edge.png", edge_map)
-    # plt.figure()
-    # plt.imshow(disp_map, 'rainbow')
-    # plt.colorbar()
-    # plt.show()
-    disp_psmnet = cv2.imread("../data/prediction/" + filename + ".png", -1)/256.0
-    disp_gt = cv2.imread("../data/gt/disp_occ_0/" + filename + ".png", -1)/256.0
-    error1, error_map1 = compute_error(disp_gt, replace_boundary(disp_psmnet, disp_bf))
-    print("Before refinement..." + str(error1))
-    # disp_refined = replace_boundary(disp_psmnet, disp_bf)
-    error2, error_map2 = compute_error(disp_gt, disp_bf)
-    f = plt.figure()
-    f.add_subplot(1,2, 1)
-    plt.imshow(error_map1, 'rainbow', vmin=-5, vmax=20)
-    f.add_subplot(1,2, 2)
-    plt.imshow(error_map2, 'rainbow', vmin=-5, vmax=20)
-    plt.colorbar()
-    plt.show(block=True)
-    print("After refinement..." + str(error2))
 
 
 
