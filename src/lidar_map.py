@@ -31,17 +31,6 @@ def project_lidar_points(img, XYZ, inverse=False):
             proj_map[v, u] = depth
     return proj_map
 
-
-def search_nearest_r(patch):
-    # find the min(ri) for points within the patch
-    min_r = 1000
-    for i in range(winsize):
-        for j in range(winsize):
-            cur_r = patch[i][j]
-            if cur_r > 0 and cur_r < min_r:
-                min_r = cur_r
-    return min_r
-
 @jit(nopython=True, fastmath=True)
 def compute_weighted_r(patch, r0):
     wr, w = 0.0, 0.0
@@ -57,26 +46,29 @@ def compute_weighted_r(patch, r0):
             wr += gs * gr * cur_r
     return wr / w
 
-def bf_vanilla(depth_map):
+def bf_vanilla_accelerated(imgL, pc):
+    depth_map = project_lidar_points(imgL, pc[:, :3].T)
     h, w = depth_map.shape
-    # set bilateral filter size to be 9
     disp_map = np.zeros((h, w))
-    for r in range(winsize//2, h-winsize//2):
-        for c in range(winsize//2, w-winsize//2):
-            # for position (r, c)
-            if depth_map[r, c]:
-                # continue if at sampled position
-                disp_map[r, c] = fu * baseline / depth_map[r, c]
+    for i in range(winsize//2, h-winsize//2):
+        for j in range(winsize//2, w-winsize//2):
+            if depth_map[i, j]:
+                disp_map[i, j] = fu * baseline / depth_map[i, j]
                 continue
-            # at unsample position, find the nearest point as ri
-            patch = depth_map[(r-winsize//2):(r+winsize//2+1), (c-winsize//2):(c+winsize//2+1)]
-            r0 = search_nearest_r(patch)
-            if r0 == 1000:
-                # no points in current patch
+            # at unsampled position
+            patch = depth_map[(i-winsize//2):(i+winsize//2+1), (j-winsize//2):(j+winsize//2+1)]
+            i_valid, j_valid = np.nonzero(patch)
+            # extract corresponding valid value
+            r_valid = patch[patch > 0]
+            # form data list [[i1, j1, r1], [i2, j2, r2], ...] to feed into DBSCAN
+            X = np.concatenate((i_valid.reshape(-1, 1), j_valid.reshape(-1, 1), r_valid.reshape(-1, 1)), axis=1)
+            if len(X) < 1:
                 continue
-            r0_star = compute_weighted_r(patch, r0)
-            disp_map[r, c] = fu * baseline / r0_star
+            r0 = np.min(X[:, 2])
+            r0_star = compute_weighted_r_sparse(r0, X)
+            disp_map[i, j] = fu * baseline / r0_star
     return disp_map
+
 
 def dispersion(r1, r2):
     # define distance function according to dispersion degree
@@ -100,6 +92,8 @@ def measure_dispersion(imgL, pc):
     h, w = depth_map.shape
     edge_map = np.zeros((h, w), dtype=np.uint8)
     disp_map = np.zeros((h, w))
+    count = 0
+    count1 = 0
     for i in range(winsize//2, h-winsize//2):
         for j in range(winsize//2, w-winsize//2):
             # local neighborhood to measure dispersion
@@ -114,19 +108,33 @@ def measure_dispersion(imgL, pc):
                 # if there are so few number of points available, skip it
                 continue
             # DBSCAN according to range of each pixel
-            clustering = DBSCAN(eps=0.05, min_samples=2, metric=dispersion).fit(X[:, 2].reshape(-1, 1))
+            clustering = DBSCAN(eps=0.08, min_samples=2, metric=dispersion).fit(X[:, 2].reshape(-1, 1))
             labels = clustering.labels_
             num_cluster = max(labels)
+            if num_cluster > 1:
+#                 print("*****************************************")
+#                 print("number of clusters: " + str(num_cluster+1))
+#                 print("-1: " + str(np.count_nonzero(labels==-1)))
+#                 print(" 0: " + str(np.count_nonzero(labels== 0)))
+#                 print(" 1: " + str(np.count_nonzero(labels== 1)))
+#                 print(" 2: " + str(np.count_nonzero(labels== 2)))
+#                 print("*****************************************")
+                count += 1
             if num_cluster > 0:
+                count1 += 1
                 # mark this edge pixel
                 edge_map[i, j] = 255
                 # if alreay point projected
                 if depth_map[i, j]:
                     disp_map[i, j] = fu * baseline / depth_map[i, j]
                     continue
-                r0 = search_nearest_r(patch)
-                r0_star = compute_weighted_r(patch, r0)
+                r0 = min(X[labels >= 0][:, 2])
+                r0_star = compute_weighted_r_sparse(r0, X[labels >= 0])
                 disp_map[i, j] = fu * baseline / r0_star
+
+                # -----------------------------------------------------------------------
+                # experimenting with penalizing minor cluster based on threshold as paper suggests
+                # but the threshold is hard to empirically determined
 
                 # # most of the time there are only 2 clusters, we assume there're only 2
                 # s1_idx = labels == 0
@@ -158,6 +166,8 @@ def measure_dispersion(imgL, pc):
                 # #     r0 = min(X[s2_idx][:, 2]) 
                 # #     r0_star = compute_weighted_r_sparse(r0, X[s2_idx])
                 # disp_map[i, j] = fu * baseline / r0_star
+#     print(">=3 clusters: " + str(count))
+#     print(">=2 clusters: " + str(count1))
     return edge_map, disp_map
 
 def replace_boundary(disp_psmnet, disp_bf):

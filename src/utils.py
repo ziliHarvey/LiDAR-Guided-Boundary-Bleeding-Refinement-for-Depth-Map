@@ -23,8 +23,8 @@ class dataLoader:
         else:
             file_path = path_image_03 + self.index + ".png" 
         try:
-#             img = cv2.imread(file_path, -1)
-            img = skimage.io.imread(file_path).astype('uint16')
+            img = cv2.imread(file_path, -1)
+#             img = skimage.io.imread(file_path).astype('uint16')
             return img
         except:
             print("The image file doesn't exisit...\n")
@@ -66,7 +66,7 @@ def reproject_to_3D(disp, img):
     T_cam_velo = inverse_rigid_transform(T_velo_cam[:3, :])
     points_h = np.concatenate((points, np.ones((points.shape[0], 1))), 1)
     points = np.dot(points_h, T_cam_velo.T)
-    mask = points[:, 2] < 2
+    mask = points[:, 2] < 1
     colors = colors[mask]
     points = points[mask]
     print("points generated successfully...")
@@ -124,9 +124,3 @@ def compute_error(gt_disp,pred_disp):
                     (error[valid_index[:,0],valid_index[:,1]] < valid_gt_disp * 0.05)
 
     return 1 - (float(sum(correct_count))/ float(valid_index.shape[0])),error
-
-if __name__ == "__main__":
-    data = dataLoader("0000000000")
-    cv2.imshow("stereo_left", data.imgL)
-    cv2.waitKey(0)
-    print(data.pc)
