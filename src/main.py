@@ -7,11 +7,11 @@ import time
 
 if __name__ == "__main__":
 
-    # test DBSCAN
-    filename = "000051"
+    filename = "000141"
     data = dataLoader(filename)
     imgL = data.imgL
     pc = data.pc
+    print("Processing data " + filename + "...\n")
     
     print("Upsampling(accelerated) begins...")
     start_acc = time.time()
@@ -40,49 +40,49 @@ if __name__ == "__main__":
 
     f = plt.figure()
 
-    ax1 = f.add_subplot(2,4, 1)
-    plt.imshow(error_map3, 'rainbow', vmin=-5, vmax=20)
-    plt.axis('off')
-    ax1.set_title("Error upsampled", fontsize=10)
-
-    ax2 = f.add_subplot(2,4, 2)
+    ax1 = f.add_subplot(4,2, 1)
     plt.imshow(error_map2, 'rainbow', vmin=-5, vmax=20)
     plt.axis('off')
-    ax2.set_title("Error predicted", fontsize=10)
+    ax1.set_title("Error predicted", fontsize=10)
     
-    ax3 = f.add_subplot(2,4, 3)
+    ax2 = f.add_subplot(4,2, 2)
+    plt.imshow(disp_psmnet, 'rainbow', vmin=10, vmax=80)
+    plt.axis('off')
+    ax2.set_title("Disparity predicted", fontsize=10)
+    
+    ax3 = f.add_subplot(4,2, 3)
     plt.imshow(error_map1, 'rainbow', vmin=-5, vmax=20)
     plt.axis('off')
     ax3.set_title("Error refined", fontsize=10)
     
-    ax4 = f.add_subplot(2,4, 4)
-    plt.imshow(edge_map)
-    plt.axis('off')
-    ax4.set_title("Edges")
-
-    ax5 = f.add_subplot(2,4, 5)
-    plt.imshow(disp_lidar, 'rainbow', vmin=10, vmax=80)
-    plt.axis('off')
-    ax5.set_title("Disparity upsampled", fontsize=10)
-    
-    ax6 = f.add_subplot(2,4, 6)
-    plt.imshow(disp_psmnet, 'rainbow', vmin=10, vmax=80)
-    plt.axis('off')
-    ax6.set_title("Disparity predicted", fontsize=10)
-    
-    ax7 = f.add_subplot(2,4, 7)
+    ax4 = f.add_subplot(4,2, 4)
     plt.imshow(disp_refined, 'rainbow', vmin=10, vmax=80)
     plt.axis('off')
-    ax7.set_title("Disparity refined", fontsize=10)
+    ax4.set_title("Disparity refined", fontsize=10)
+    
+    ax5 = f.add_subplot(4,2, 5)
+    plt.imshow(error_map3, 'rainbow', vmin=-5, vmax=20)
+    plt.axis('off')
+    ax5.set_title("Error upsampled", fontsize=10)
+    
+    ax6 = f.add_subplot(4,2, 6)
+    plt.imshow(disp_lidar, 'rainbow', vmin=10, vmax=80)
+    plt.axis('off')
+    ax6.set_title("Disparity upsampled", fontsize=10)
+    
+    ax7 = f.add_subplot(4,2, 7)
+    plt.imshow(edge_map)
+    plt.axis('off')
+    ax7.set_title("Edges", fontsize=10)
 
-    ax8 = f.add_subplot(2,4, 8)
-    plt.imshow(imgL)
+    ax8 = f.add_subplot(4,2, 8)
+    plt.imshow(cv2.cvtColor(imgL, cv2.COLOR_BGR2RGB))
     plt.axis('off')
     ax8.set_title("Image", fontsize=10)
 
 #     plt.show(block=True)
     plt.tight_layout()
-    plt.savefig("../output/" + filename + "_compare.png", dpi=1200)
+    plt.savefig("../output/" + filename + "_compare.png", dpi=600)
 
     points, colors = reproject_to_3D(disp_lidar, imgL)
     save_ply("../output/" + filename + "_upsampled.ply", points, colors)
