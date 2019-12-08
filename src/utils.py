@@ -23,8 +23,8 @@ class dataLoader:
         else:
             file_path = path_image_03 + self.index + ".png" 
         try:
-#             img = cv2.imread(file_path, -1)
-            img = skimage.io.imread(file_path).astype('uint16')
+            img = cv2.imread(file_path, -1)
+#             img = skimage.io.imread(file_path).astype('uint16')
             return img
         except:
             print("The image file doesn't exisit...\n")
