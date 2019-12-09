@@ -81,10 +81,17 @@ def inverse_rigid_transform(T):
     return T_inv 
 
 
-
+def save_bin(fn, points):
+    # save points in bin file
+    # points (n, 3)
+    # bin (n, 4)
+    num = points.shape[0]
+    points_h = np.concatenate((points, np.ones(num).reshape(-1, 1)), axis=1).astype(np.float32)
+    points_h.tofile(fn)
+    
 def save_ply(fn, points, colors):
     # save points to ply file
-    # points: 3Xn
+    # points: (n, 3)
     num = points.shape[0]
     ply_header = '''ply
     format ascii 1.0
