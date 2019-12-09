@@ -34,14 +34,13 @@ def project_lidar_points(img, XYZ, inverse=False):
 @jit(nopython=True, fastmath=True)
 def find_horizontal_line(depth_map):
     h, w = depth_map.shape
-    hrz_sum = 0
+    start = h
     for j in range(w):
-        cur_bin = depth_map[:, j]
         i = 0
         while not depth_map[i, j]:
             i += 1
-        hrz_sum += i
-    return int(hrz_sum/w)
+        start = min(i, start)
+    return start
 
 def bf_vanilla_accelerated(imgL, pc):
     depth_map = project_lidar_points(imgL, pc[:, :3].T)

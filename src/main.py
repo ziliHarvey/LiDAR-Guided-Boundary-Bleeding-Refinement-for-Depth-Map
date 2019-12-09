@@ -7,7 +7,7 @@ import time
 
 if __name__ == "__main__":
 
-    filename = "000141"
+    filename = "000036"
     data = dataLoader(filename)
     imgL = data.imgL
     pc = data.pc
