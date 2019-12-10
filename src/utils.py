@@ -109,25 +109,46 @@ def save_ply(fn, points, colors):
         f.write((ply_header % dict(vert_num=num)).encode('utf-8'))
         np.savetxt(f, verts, fmt='%f %f %f %d %d %d ')
         
-def compute_error(gt_disp,pred_disp):
+def compute_error(gt_disp,pred_disp, obj_map):
     '''
     input: 
           gt_disp: ground truth disparity, if saved as .png file, need to use 
                    (skimage.io.imread(filepath).astype('float32')) / 256.0 to process
           pred_disp: predicted disparity, if saved as .png file, following the same procedure.
+          obj_map: mask of foreground objects
     output:
           return error percentage
     '''
 
     valid_index_gt = np.argwhere(gt_disp > 0) 
-    valid_index_pred = np.argwhere(pred_disp > 0) 
+    valid_index_pred = np.argwhere(pred_disp > 0)
+    valid_index_fg = np.argwhere(obj_map > 0)
+    valid_index_bg = np.argwhere(obj_map == 0)
+    # computing error of all objects
     valid_index = np.array([x for x in set(tuple(x) for x in valid_index_gt) & set(tuple(x) for x in valid_index_pred)])
     valid_gt_disp = gt_disp[valid_index[:,0],valid_index[:,1]]
     valid_pred_disp = pred_disp[valid_index[:,0],valid_index[:,1]]
-    
     error = np.zeros_like(gt_disp)-5
     error[valid_index[:,0],valid_index[:,1]] =  np.abs(valid_gt_disp - valid_pred_disp)
     correct_count = (error[valid_index[:,0],valid_index[:,1]] < 3) | \
                     (error[valid_index[:,0],valid_index[:,1]] < valid_gt_disp * 0.05)
-
-    return 1 - (float(sum(correct_count))/ float(valid_index.shape[0])),error
+    
+    # computing error of foreground objects
+    valid_index_fg = np.array([x for x in (set(tuple(x) for x in valid_index_gt) & set(tuple(x) for x in valid_index_pred)) & set(tuple(x) for x in valid_index_fg)])
+    valid_gt_disp_fg = gt_disp[valid_index_fg[:,0],valid_index_fg[:,1]]
+    valid_pred_disp_fg = pred_disp[valid_index_fg[:,0],valid_index_fg[:,1]]
+    error_fg = np.zeros_like(gt_disp)-5
+    error_fg[valid_index_fg[:,0],valid_index_fg[:,1]] =  np.abs(valid_gt_disp_fg - valid_pred_disp_fg)
+    correct_count_fg = (error_fg[valid_index_fg[:,0],valid_index_fg[:,1]] < 3) | \
+                    (error_fg[valid_index_fg[:,0],valid_index_fg[:,1]] < valid_gt_disp_fg * 0.05)
+    
+    # computing error of background objects
+    valid_index_bg = np.array([x for x in (set(tuple(x) for x in valid_index_gt) & set(tuple(x) for x in valid_index_pred)) & set(tuple(x) for x in valid_index_bg)])
+    valid_gt_disp_bg = gt_disp[valid_index_bg[:,0],valid_index_bg[:,1]]
+    valid_pred_disp_bg = pred_disp[valid_index_bg[:,0],valid_index_bg[:,1]]
+    error_bg = np.zeros_like(gt_disp)-5
+    error_bg[valid_index_bg[:,0],valid_index_bg[:,1]] =  np.abs(valid_gt_disp_bg - valid_pred_disp_bg)
+    correct_count_bg = (error_bg[valid_index_bg[:,0],valid_index_bg[:,1]] < 3) | \
+                    (error_bg[valid_index_bg[:,0],valid_index_bg[:,1]] < valid_gt_disp_bg * 0.05)
+    count_above_15 = np.count_nonzero(error >= 15)
+    return 1 - (float(sum(correct_count))/ float(valid_index.shape[0])), 1 - (float(sum(correct_count_fg))/ float(valid_index_fg.shape[0])), 1 - (float(sum(correct_count_bg))/ float(valid_index_bg.shape[0])), error, count_above_15
