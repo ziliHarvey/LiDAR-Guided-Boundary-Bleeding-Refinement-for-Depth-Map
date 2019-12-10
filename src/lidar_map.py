@@ -84,17 +84,49 @@ def compute_weighted_r_sparse(r0, IJR):
         wr += gs * gr * r
     return wr / w
 
-def measure_dispersion(imgL, pc):
+@jit(nopython=True)
+def update_occupancy(occupancy, bbox):
+    """
+    occupancy: (h, w) matrix with 1 representing searching areas
+    bbox: (n, 4) with left, top, right, bottom pixel coordinates
+    """
+    margin = 5
+    # intialize occupancy grid
+    occupancy += -1
+    h, w = occupancy.shape
+    for i in range(len(bbox)):
+        j_start, i_start, j_end, i_end = bbox[i]
+        # given relatively loose margin constraint finding both sides of edges
+        for r in range(i_start-margin, i_end+margin+1):
+            for c in range(j_start-margin, j_end+margin+1):
+                if r < 0 or r > h:
+                    continue
+                if c < 0 or c > w:
+                    continue
+                occupancy[r, c] = 255
+
+def measure_dispersion(imgL, pc, bbox=[]):
+    """
+    imgL: (h, w, 3) stereo-left image
+    pc: (N, 3) pointcloud
+    bbox: (n, 4) with left, top, right, bottom pixel coordinates
+    """
     depth_map = project_lidar_points(imgL, pc[:, :3].T)
     h, w = depth_map.shape
     edge_map = np.zeros((h, w), dtype=np.uint8)
     disp_map = np.zeros((h, w))
-    count = 0
-    count1 = 0
     # find the horizontal line
     i_start = find_horizontal_line(depth_map)
+    # exhaustive search on all pixels if 2D bboxes not provided
+    occupancy = np.ones((h, w))
+    if len(bbox) > 0:
+        # searching on potential foreground areas only
+        # instead of doing exhaustive search
+        update_occupancy(occupancy, bbox)
     for i in range(i_start, h-winsize//2):
         for j in range(winsize//2, w-winsize//2):
+            if occupancy[i, j] == 0:
+                continue
             # local neighborhood to measure dispersion
             patch = depth_map[(i-winsize//2):(i+winsize//2+1), (j-winsize//2):(j+winsize//2+1)]
             # extract nonzero idx
@@ -110,17 +142,7 @@ def measure_dispersion(imgL, pc):
             clustering = DBSCAN(eps=0.08, min_samples=2, metric=dispersion).fit(X[:, 2].reshape(-1, 1))
             labels = clustering.labels_
             num_cluster = max(labels)
-            if num_cluster > 1:
-#                 print("*****************************************")
-#                 print("number of clusters: " + str(num_cluster+1))
-#                 print("-1: " + str(np.count_nonzero(labels==-1)))
-#                 print(" 0: " + str(np.count_nonzero(labels== 0)))
-#                 print(" 1: " + str(np.count_nonzero(labels== 1)))
-#                 print(" 2: " + str(np.count_nonzero(labels== 2)))
-#                 print("*****************************************")
-                count += 1
             if num_cluster > 0:
-                count1 += 1
                 # mark this edge pixel
                 edge_map[i, j] = 255
                 # if alreay point projected
@@ -130,43 +152,6 @@ def measure_dispersion(imgL, pc):
                 r0 = min(X[labels >= 0][:, 2])
                 r0_star = compute_weighted_r_sparse(r0, X[labels >= 0])
                 disp_map[i, j] = fu * baseline / r0_star
-
-                # -----------------------------------------------------------------------
-                # experimenting with penalizing minor cluster based on threshold as paper suggests
-                # but the threshold is hard to empirically determined
-
-                # # most of the time there are only 2 clusters, we assume there're only 2
-                # s1_idx = labels == 0
-                # s1_num = len(labels[s1_idx])
-                # s1_mean = sum(labels[s1_idx])/s1_num
-                # s2_idx = labels == 1
-                # s2_num = len(labels[s2_idx])
-                # s2_mean = sum(labels[s2_idx])/s2_num
-                # # here set thr for picking cluster
-                # thr = 1
-                # # find cluster s1, which is the cluster with min average r
-                # if (s1_mean < s2_mean and s1_num/s2_num > thr) or \
-                #    (s1_mean > s2_mean and s2_num/s1_num < thr):
-                #     r0 = min(X[s1_idx][:, 2])
-                #     r0_star = compute_weighted_r_sparse(r0, X[s1_idx])
-                # else:
-                #     r0 = min(X[s2_idx][:, 2]) 
-                #     r0_star = compute_weighted_r_sparse(r0, X[s2_idx])
-                # # if s1_mean > s2_mean:
-                # #     # switch
-                # #     s1_idx, s2_idx = s2_idx, s1_idx
-                # #     s1_num, s2_num = s2_num, s1_num
-                # # if s1_num/s2_num > 1:
-                # #     # run bilater filter only on s1
-                # #     r0 = min(X[s1_idx][:, 2])
-                # #     r0_star = compute_weighted_r_sparse(r0, X[s1_idx])
-                # # else:
-                # #     # run bilateral filter only on s2
-                # #     r0 = min(X[s2_idx][:, 2]) 
-                # #     r0_star = compute_weighted_r_sparse(r0, X[s2_idx])
-                # disp_map[i, j] = fu * baseline / r0_star
-#     print(">=3 clusters: " + str(count))
-#     print(">=2 clusters: " + str(count1))
     return edge_map, disp_map
 
 def replace_boundary(disp_psmnet, disp_bf):
