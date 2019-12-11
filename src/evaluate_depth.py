@@ -28,21 +28,35 @@ def evaluate_one_file(filename):
     
     disp_psmnet = cv2.imread("../data/prediction/" + filename + ".png", -1)/256.0
     disp_gt = cv2.imread("../data/gt/disp_occ_0/" + filename + ".png", -1)/256.0
+    obj_map = cv2.imread("../data/gt/obj_map/" + filename + ".png", -1)/256.0
     disp_refined = replace_boundary(disp_psmnet, disp_bf)
     
-    error1, error_map1 = compute_error(disp_gt, disp_refined)    
-    error2, error_map2 = compute_error(disp_gt, disp_psmnet)
-    error3, error_map3 = compute_error(disp_gt, disp_lidar)
-#     print("LiDAR points upsampling..." + str(error3))
-#     print("before refinement..." + str(error2))
-#     print("after refinement..." + str(error1))
+    rtn = []
+    error1, error1_fg, error1_bg, error_map1, count1_above_15 = compute_error(disp_gt, disp_refined, obj_map)    
+    rtn.append((error1, error1_fg, error1_bg, error_map1, count1_above_15))
+    error2, error2_fg, error2_bg, error_map2, count2_above_15 = compute_error(disp_gt, disp_psmnet, obj_map)
+    rtn.append((error2, error2_fg, error2_bg, error_map2, count2_above_15))
+    error3, error3_fg, error3_bg, error_map3, count3_above_15 = compute_error(disp_gt, disp_lidar, obj_map)
+    rtn.append((error3, error3_fg, error3_bg, error_map3, count3_above_15))
+#     print("All: LiDAR points upsampling... " + str(error3))
+#     print("All: before refinement... " + str(error2))
+#     print("All: after refinement... " + str(error1))
+#     print("FG: LiDAR points upsampling... " + str(error3_fg))
+#     print("FG: before refinement... " + str(error2_fg))
+#     print("FG: after refinement... " + str(error1_fg))
+#     print("BG: LiDAR points upsampling... " + str(error3_bg))
+#     print("BG: before refinement... " + str(error2_bg))
+#     print("BG: after refinement... " + str(error1_bg))
+#     print("BIG ERROR COUNT: LiDAR points upsampling... " + str(count3_above_15))
+#     print("BIG ERROR COUNT: before refinement... " + str(count2_above_15))
+#     print("BIG ERROR COUNT: after refinement... " + str(count1_above_15))
 
     f = plt.figure()
 
     ax1 = f.add_subplot(4,2, 1)
     plt.imshow(error_map2, 'rainbow', vmin=-5, vmax=20)
     plt.axis('off')
-    ax1.set_title("Error predicted: " + str(100* error2)[:4] + "%", fontsize=10)
+    ax1.set_title("Error predicted: " + str(100* error2)[:4] + "%", fontsize=8)
     
     ax2 = f.add_subplot(4,2, 2)
     plt.imshow(disp_psmnet, 'rainbow', vmin=10, vmax=80)
@@ -60,7 +74,7 @@ def evaluate_one_file(filename):
     ax4.set_title("Disparity refined", fontsize=8)
     
     ax5 = f.add_subplot(4,2, 5)
-    plt.imshow(error_map3, 'rainbow', vmin=-5, vmax=20, fontsize=8)
+    plt.imshow(error_map3, 'rainbow', vmin=-5, vmax=20)
     plt.axis('off')
     ax5.set_title("Error upsampled: " + str(100* error3)[:4] + "%", fontsize=8)
     
@@ -92,37 +106,103 @@ def evaluate_one_file(filename):
 #     points, colors = reproject_to_3D(disp_gt, imgL)
 #     save_ply("../output/" + filename + "_gt.ply", points, colors)
     plt.close()
-    return error1, error2, error3
+    return rtn
 
 def evaluate_whole_files():
     import glob, os
     paths = glob.glob("../data/image_02/*.png")[20:]
     count = 0
-    error_refined = 0
-    error_predicted = 0
-    error_upsampled = 0
+    
+    error_refined_all = 0
+    error_refined_fg = 0
+    error_refined_bg = 0
+    error_refined_above_15 = 0
+    
+    error_predicted_all = 0
+    error_predicted_fg = 0
+    error_predicted_bg = 0
+    error_predicted_above_15 = 0
+    
+    error_upsampled_all = 0
+    error_upsampled_fg = 0
+    error_upsampled_bg = 0
+    error_upsampled_above_15 = 0
+    
     for path in paths:
         fn = os.path.basename(path)[:-4]
-        err1, err2, err3 = evaluate_one_file(fn)
+        err_pair1, err_pair2, err_pair3 = evaluate_one_file(fn)
         count += 1
-        error_refined += err1
-        error_predicted += err2
-        error_upsampled += err3
+        
+        error1_all, error1_fg, error1_bg, _, count1_above_15 = err_pair1
+        error2_all, error2_fg, error2_bg, _, count2_above_15 = err_pair2
+        error3_all, error3_fg, error3_bg, _, count3_above_15 = err_pair3
+        
+        error_refined_all += error1_all 
+        error_refined_fg += error1_fg
+        error_refined_bg += error1_bg
+        error_refined_above_15 += count1_above_15
+        
+        error_predicted_all += error2_all 
+        error_predicted_fg += error2_fg
+        error_predicted_bg += error2_bg
+        error_predicted_above_15 += count2_above_15
+    
+        error_upsampled_all += error3_all 
+        error_upsampled_fg += error3_fg
+        error_upsampled_bg += error3_bg
+        error_upsampled_above_15 += count3_above_15
         
         if count % 10 == 0:
             print("\n\n")
             print(str(count) + " files processed...")
-            print("Upsampled error average: " + str(error_upsampled / count))
-            print("Predicted error average: " + str(error_predicted / count))
-            print("Refined   error average: " + str(error_refined / count))
+            
+            print("ERROR ALL:")
+            print("Upsampled error average: " + str(error_upsampled_all / count))
+            print("Predicted error average: " + str(error_predicted_all / count))
+            print("Refined   error average: " + str(error_refined_all / count))
+            
+            print("ERROR FG:")
+            print("Upsampled error average: " + str(error_upsampled_fg / count))
+            print("Predicted error average: " + str(error_predicted_fg / count))
+            print("Refined   error average: " + str(error_refined_fg / count))
+            
+            print("ERROR BG:")
+            print("Upsampled error average: " + str(error_upsampled_bg / count))
+            print("Predicted error average: " + str(error_predicted_bg / count))
+            print("Refined   error average: " + str(error_refined_bg / count))
+            
+            print("NUMBER OF PIXELS WITH ERROR ABOVE 15...")
+            print("Upsampled error average: " + str(error_upsampled_above_15 / count))
+            print("Predicted error average: " + str(error_predicted_above_15 / count))
+            print("Refined   error average: " + str(error_refined_above_15 / count))
             print("\n\n")
             
 if __name__ == "__main__":
     """
-    Upsampled error average: 0.0622560780720797
-    Predicted error average: 0.04163520386390926
-    Refined   error average: 0.042493429159431724
+    Evaluation results
+    
+    ERROR ALL:
+    Upsampled error average: 0.06024135959184822
+    Predicted error average: 0.040086981083588324
+    Refined   error average: 0.041264117273157715
+    
+    ERROR FG:
+    Upsampled error average: 0.11874002694674594
+    Predicted error average: 0.11610788760059843
+    Refined   error average: 0.09937875081763488
+    
+    ERROR BG:
+    Upsampled error average: 0.04234554338418705
+    Predicted error average: 0.02126481841892328
+    Refined   error average: 0.02388655602237057
+    
+    NUMBER OF PIXELS WITH ERROR ABOVE 15...
+    Upsampled error average: 750.9272727272727
+    Predicted error average: 1163.5181818181818
+    Refined   error average: 830.5
     """
+    evaluate_one_file("000002")
+    print("TEST SUCCESSFULLY, NOW EVALUATING ALL...")
     evaluate_whole_files()
 
 
