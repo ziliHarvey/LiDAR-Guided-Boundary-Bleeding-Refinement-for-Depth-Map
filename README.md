@@ -1,2 +1,5 @@
-# 16822-Project
-depth completion by fusing upsampled LiDAR points and PSMNET disparity prediction
+# LiDAR Guided Boundary Bleeding Refinement for Depth Map
+
+## Installation
+
+## Results and Analysis
