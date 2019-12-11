@@ -4,6 +4,14 @@ import matplotlib.pyplot as plt
 from utils import dataLoader, reproject_to_3D, save_ply, compute_error
 from lidar_map import measure_dispersion, replace_boundary, bf_vanilla_accelerated
 import time
+import argparse
+import os
+import tqdm
+
+parser = argparse.ArgumentParser(description="arg parser")
+parser.add_argument('--mode', type=int, default=0, help='specify evaluation mode: 0:one file | 1: whole files')
+parser.add_argument('--fn', type=str, default="000035", help='specify file name, skip this if evaluating on whole files')
+args = parser.parse_args()
 
 def evaluate_one_file(filename):
     # evaluate on one file pair
@@ -12,19 +20,19 @@ def evaluate_one_file(filename):
     pc = data.pc
     print("Processing data " + filename + "...\n")
     
-#     print("Upsampling(accelerated) begins...")
+    print("Upsampling(accelerated) begins...")
     start_acc = time.time()
     disp_lidar = bf_vanilla_accelerated(imgL, pc)
     end_acc = time.time()
     elapse_acc = end_acc - start_acc
-#     print("Upsampling(accelerated) on raw points takes " + str(elapse_acc) + " seconds...\n")
+    print("Upsampling(accelerated) on raw points takes " + str(elapse_acc) + " seconds...\n")
     
-#     print("Refinement begins...")
+    print("Refinement begins...")
     start_refine = time.time()
     edge_map, disp_bf = measure_dispersion(imgL, pc)
     end_refine = time.time()
     elapse_refine = end_refine - start_refine
-#     print("Refinement takes " + str(elapse_refine) + " seconds...\n")
+    print("Refinement takes " + str(elapse_refine) + " seconds...\n")
     
     disp_psmnet = cv2.imread("../data/prediction/" + filename + ".png", -1)/256.0
     disp_gt = cv2.imread("../data/gt/disp_occ_0/" + filename + ".png", -1)/256.0
@@ -38,18 +46,18 @@ def evaluate_one_file(filename):
     rtn.append((error2, error2_fg, error2_bg, error_map2, count2_above_15))
     error3, error3_fg, error3_bg, error_map3, count3_above_15 = compute_error(disp_gt, disp_lidar, obj_map)
     rtn.append((error3, error3_fg, error3_bg, error_map3, count3_above_15))
-#     print("All: LiDAR points upsampling... " + str(error3))
-#     print("All: before refinement... " + str(error2))
-#     print("All: after refinement... " + str(error1))
-#     print("FG: LiDAR points upsampling... " + str(error3_fg))
-#     print("FG: before refinement... " + str(error2_fg))
-#     print("FG: after refinement... " + str(error1_fg))
-#     print("BG: LiDAR points upsampling... " + str(error3_bg))
-#     print("BG: before refinement... " + str(error2_bg))
-#     print("BG: after refinement... " + str(error1_bg))
-#     print("BIG ERROR COUNT: LiDAR points upsampling... " + str(count3_above_15))
-#     print("BIG ERROR COUNT: before refinement... " + str(count2_above_15))
-#     print("BIG ERROR COUNT: after refinement... " + str(count1_above_15))
+    print("All: LiDAR points upsampling... " + str(error3))
+    print("All: before refinement... " + str(error2))
+    print("All: after refinement... " + str(error1))
+    print("FG: LiDAR points upsampling... " + str(error3_fg))
+    print("FG: before refinement... " + str(error2_fg))
+    print("FG: after refinement... " + str(error1_fg))
+    print("BG: LiDAR points upsampling... " + str(error3_bg))
+    print("BG: before refinement... " + str(error2_bg))
+    print("BG: after refinement... " + str(error1_bg))
+    print("BIG ERROR COUNT: LiDAR points upsampling... " + str(count3_above_15))
+    print("BIG ERROR COUNT: before refinement... " + str(count2_above_15))
+    print("BIG ERROR COUNT: after refinement... " + str(count1_above_15))
 
     f = plt.figure()
 
@@ -93,19 +101,19 @@ def evaluate_one_file(filename):
     plt.axis('off')
     ax8.set_title("Image", fontsize=10)
 
-#     plt.show(block=True)
     plt.tight_layout()
     plt.savefig("../output/" + "compare_" + filename + ".png", dpi=600)
-
-#     points, colors = reproject_to_3D(disp_lidar, imgL)
-#     save_ply("../output/" + filename + "_upsampled.ply", points, colors)
-#     points, colors = reproject_to_3D(disp_psmnet, imgL)
-#     save_ply("../output/" + filename + "_predicted.ply", points, colors)
-#     points, colors = reproject_to_3D(disp_refined, imgL)
-#     save_ply("../output/" + filename + "_refined.ply", points, colors)
-#     points, colors = reproject_to_3D(disp_gt, imgL)
-#     save_ply("../output/" + filename + "_gt.ply", points, colors)
     plt.close()
+    
+    points, colors = reproject_to_3D(disp_lidar, imgL)
+    save_ply("../output/" + filename + "_upsampled.ply", points, colors)
+    points, colors = reproject_to_3D(disp_psmnet, imgL)
+    save_ply("../output/" + filename + "_predicted.ply", points, colors)
+    points, colors = reproject_to_3D(disp_refined, imgL)
+    save_ply("../output/" + filename + "_refined.ply", points, colors)
+    points, colors = reproject_to_3D(disp_gt, imgL)
+    save_ply("../output/" + filename + "_gt.ply", points, colors)
+    
     return rtn
 
 def evaluate_whole_files():
@@ -128,9 +136,11 @@ def evaluate_whole_files():
     error_upsampled_bg = 0
     error_upsampled_above_15 = 0
     
+    progress_bar = tqdm.tqdm(total=len(paths), leave=True, desc='eval')
     for path in paths:
         fn = os.path.basename(path)[:-4]
         err_pair1, err_pair2, err_pair3 = evaluate_one_file(fn)
+        progress_bar.update()
         count += 1
         
         error1_all, error1_fg, error1_bg, _, count1_above_15 = err_pair1
@@ -178,32 +188,22 @@ def evaluate_whole_files():
             print("\n\n")
             
 if __name__ == "__main__":
-    """
-    Evaluation results
-    
-    ERROR ALL:
-    Upsampled error average: 0.06024135959184822
-    Predicted error average: 0.040086981083588324
-    Refined   error average: 0.041264117273157715
-    
-    ERROR FG:
-    Upsampled error average: 0.11874002694674594
-    Predicted error average: 0.11610788760059843
-    Refined   error average: 0.09937875081763488
-    
-    ERROR BG:
-    Upsampled error average: 0.04234554338418705
-    Predicted error average: 0.02126481841892328
-    Refined   error average: 0.02388655602237057
-    
-    NUMBER OF PIXELS WITH ERROR ABOVE 15...
-    Upsampled error average: 750.9272727272727
-    Predicted error average: 1163.5181818181818
-    Refined   error average: 830.5
-    """
-    evaluate_one_file("000002")
-    print("TEST SUCCESSFULLY, NOW EVALUATING ALL...")
-    evaluate_whole_files()
+    if not os.path.exists("../output/"):
+        os.makedirs("../output/")
+    if args.mode == 1:
+        print("Evaluating on all files")
+        evaluate_whole_files()
+        print("finished, please check output folder for results...")
+    elif args.mode == 0:
+        fn = args.fn
+        print("Evaluating on " + fn + "...")
+        try:
+            evaluate_one_file(fn)
+            print("finished, please check output folder for results...")
+        except:
+            print("file not found, please check data folder, or did you forget leading zeros in filename?")
+    else:
+        print("mode has to be 0 or 1!")
 
 
     
